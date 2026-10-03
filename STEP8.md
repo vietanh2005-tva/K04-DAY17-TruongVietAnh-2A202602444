@@ -7,14 +7,14 @@
 | Agent | Agent tokens only | Prompt tokens processed | Cross-session recall | Response quality | Memory growth (bytes) | Compactions |
 |---|---:|---:|---:|---:|---:|---:|
 | Baseline | 1793 | 15752 | 0.000 | 0.200 | 0 | 0 |
-| Advanced | 1426 | 20496 | 0.821 | 0.836 | 311 | 0 |
+| Advanced | 1386 | 20687 | 0.821 | 0.836 | 311 | 0 |
 
 ### Long-Context Stress Benchmark
 
 | Agent | Agent tokens only | Prompt tokens processed | Cross-session recall | Response quality | Memory growth (bytes) | Compactions |
 |---|---:|---:|---:|---:|---:|---:|
 | Baseline | 435 | 22743 | 0.000 | 0.200 | 0 | 0 |
-| Advanced | 338 | 7990 | 1.000 | 1.000 | 372 | 11 |
+| Advanced | 335 | 7752 | 1.000 | 1.000 | 372 | 10 |
 
 ## 1. Vì sao Advanced recall tốt hơn Baseline?
 
@@ -22,11 +22,11 @@ Baseline khóa lịch sử theo `thread_id` và không đọc hay ghi file bền
 
 ## 2. Vì sao Advanced có thể tốn hơn ở hội thoại ngắn?
 
-Trong Standard Benchmark, `Prompt tokens processed` của Advanced là 20,496, cao hơn 15,752 của Baseline. Mỗi lượt Advanced phải mang thêm `User.md`, summary và recent messages, đồng thời hội thoại ngắn chưa đủ dài để compact tạo ra lợi ích. Đây là overhead của persistent memory; recall tốt hơn không miễn phí.
+Trong Standard Benchmark, `Prompt tokens processed` của Advanced là 20,687, cao hơn 15,752 của Baseline. Mỗi lượt Advanced phải mang thêm `User.md`, summary và recent messages, đồng thời hội thoại ngắn chưa đủ dài để compact tạo ra lợi ích. Đây là overhead của persistent memory; recall tốt hơn không miễn phí.
 
 ## 3. Vì sao compact có lợi trong hội thoại dài?
 
-Trong Stress Benchmark, Baseline xử lý 22,743 prompt token trong khi Advanced chỉ xử lý 7,990, giảm khoảng 64.9%. Advanced thực hiện 11 lần compaction, thay phần lịch sử cũ bằng summary có kích thước giới hạn và chỉ giữ nguyên văn các message gần nhất. Compact tối ưu lượng ngữ cảnh được xử lý (`Prompt tokens processed`), không trực tiếp hứa hẹn giảm lượng token câu trả lời (`Agent tokens only`).
+Trong Stress Benchmark, Baseline xử lý 22,743 prompt token trong khi Advanced chỉ xử lý 7,752, giảm khoảng 65.9%. Advanced thực hiện 10 lần compaction, thay phần lịch sử cũ bằng summary có kích thước giới hạn và chỉ giữ nguyên văn các message gần nhất. Compact tối ưu lượng ngữ cảnh được xử lý (`Prompt tokens processed`), không trực tiếp hứa hẹn giảm lượng token câu trả lời (`Agent tokens only`).
 
 ## 4. Memory tăng trưởng thế nào và có rủi ro gì?
 
