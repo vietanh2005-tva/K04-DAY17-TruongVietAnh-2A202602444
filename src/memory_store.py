@@ -139,6 +139,7 @@ def extract_profile_updates(message: str) -> dict[str, str]:
         capture("profession", [
             r"(?:nghề nghiệp(?: hiện tại)?\s*(?:thì\s+)?(?:vẫn\s+)?là|hiện làm)\s+([^,.!?]+)",
             r"(?:giờ|hiện tại)\s+(?:mình|tôi)?\s*(?:đã\s+)?chuyển sang\s+([^,.!?]+)",
+            r"(?:^|[.;,]|\bvà\b)\s*(?:mình|tôi)?\s*đang làm\s+(?!việc\s+ở\b)([^,.!?]+?)(?:\s+cho\s+[^,.!?]+)?(?:[,.!?]|$)",
             r"(?:mình|tôi)\s+(?:hiện\s+)?đang làm\s+(?!việc\s+ở\b)([^,.!?]+?)(?:\s+cho\s+[^,.!?]+)?(?:[,.!?]|$)",
         ])
 
