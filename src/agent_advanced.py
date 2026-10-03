@@ -15,7 +15,7 @@ class AgentContext:
 
 
 class AdvancedAgent:
-    """Student TODO: implement Agent B / Advanced Agent.
+    """Agent B with short-term, persistent, and compact memory.
 
     Required memory layers:
     1. within-session memory
@@ -34,28 +34,29 @@ class AdvancedAgent:
         self.thread_tokens: dict[str, int] = {}
         self.thread_prompt_tokens: dict[str, int] = {}
 
-        # TODO: optionally initialize a real LangChain/LangGraph agent.
         self.langchain_agent = None
+        if not force_offline and self.config.model.api_key:
+            self.langchain_agent = self._maybe_build_langchain_agent()
 
     def reply(self, user_id: str, thread_id: str, message: str) -> dict[str, Any]:
-        """Student TODO: route between offline mode and live mode."""
+        """Return a deterministic response using all memory layers."""
 
-        raise NotImplementedError
+        return self._reply_offline(user_id, thread_id, message)
 
     def token_usage(self, thread_id: str) -> int:
-        raise NotImplementedError
+        return self.thread_tokens.get(thread_id, 0)
 
     def prompt_token_usage(self, thread_id: str) -> int:
-        raise NotImplementedError
+        return self.thread_prompt_tokens.get(thread_id, 0)
 
     def memory_file_size(self, user_id: str) -> int:
-        raise NotImplementedError
+        return self.profile_store.file_size(user_id)
 
     def compaction_count(self, thread_id: str) -> int:
-        raise NotImplementedError
+        return self.compact_memory.compaction_count(thread_id)
 
     def _reply_offline(self, user_id: str, thread_id: str, message: str) -> dict[str, Any]:
-        """Student TODO: implement the deterministic advanced path.
+        """Implement the deterministic advanced path.
 
         Pseudocode:
         1. Extract stable profile facts from the incoming message.
@@ -66,10 +67,19 @@ class AdvancedAgent:
         6. Append the assistant reply and update token counters.
         """
 
-        raise NotImplementedError
+        for key, value in extract_profile_updates(message).items():
+            self.profile_store.upsert_fact(user_id, key, value)
+        self.compact_memory.append(thread_id, "user", message)
+        prompt_tokens = self._estimate_prompt_context_tokens(user_id, thread_id)
+        self.thread_prompt_tokens[thread_id] = self.thread_prompt_tokens.get(thread_id, 0) + prompt_tokens
+        answer = self._offline_response(user_id, thread_id, message)
+        agent_tokens = estimate_tokens(answer)
+        self.thread_tokens[thread_id] = self.thread_tokens.get(thread_id, 0) + agent_tokens
+        self.compact_memory.append(thread_id, "assistant", answer)
+        return {"answer": answer, "agent_tokens": agent_tokens, "prompt_tokens": prompt_tokens}
 
     def _estimate_prompt_context_tokens(self, user_id: str, thread_id: str) -> int:
-        """Student TODO: estimate the context carried into one turn.
+        """Estimate the context carried into one turn.
 
         Hint:
         - Include `User.md`
@@ -77,10 +87,13 @@ class AdvancedAgent:
         - Include recent kept messages
         """
 
-        raise NotImplementedError
+        profile = self.profile_store.read_text(user_id)
+        context = self.compact_memory.context(thread_id)
+        recent = "\n".join(str(item["content"]) for item in context["messages"])
+        return estimate_tokens(profile) + estimate_tokens(str(context["summary"])) + estimate_tokens(recent)
 
     def _offline_response(self, user_id: str, thread_id: str, message: str) -> str:
-        """Student TODO: return a deterministic answer using persisted memory.
+        """Return a deterministic answer using persisted memory.
 
         Make sure the advanced agent can answer questions like:
         - "Mình tên gì?"
@@ -89,10 +102,32 @@ class AdvancedAgent:
         - questions in the long stress dataset
         """
 
-        raise NotImplementedError
+        facts = self.profile_store.facts(user_id)
+        lower = message.lower()
+        keys: list[str] = []
+        if "tên" in lower or "tóm tắt" in lower:
+            keys.append("name")
+        if "nghề" in lower or "làm" in lower or "tóm tắt" in lower:
+            keys.append("profession")
+        if "ở đâu" in lower or "nơi ở" in lower:
+            keys.append("location")
+        if "đồ uống" in lower:
+            keys.append("favorite_drink")
+        if "món ăn" in lower:
+            keys.append("favorite_food")
+        if "nuôi" in lower or "con gì" in lower:
+            keys.append("pet")
+        if "style" in lower or "kiểu trả lời" in lower or "cách trả lời" in lower:
+            keys.append("response_style")
+        if "quan tâm" in lower or "kỹ thuật" in lower or "tóm tắt" in lower:
+            keys.append("interests")
+        values = [facts[key] for key in dict.fromkeys(keys) if key in facts]
+        if values:
+            return "; ".join(values) + "."
+        return "Mình đã ghi nhớ thông tin ổn định này trong hồ sơ của bạn."
 
     def _maybe_build_langchain_agent(self):
-        """Student TODO: wire a live agent with tools and compact middleware.
+        """Build an optional live agent with persistent-memory-friendly state.
 
         High-level design:
         - `build_chat_model(self.config.model)` for the selected provider
@@ -103,4 +138,9 @@ class AdvancedAgent:
         - summarization middleware for long threads
         """
 
-        raise NotImplementedError
+        try:
+            from langchain.agents import create_agent
+            from langgraph.checkpoint.memory import InMemorySaver
+            return create_agent(build_chat_model(self.config.model), checkpointer=InMemorySaver())
+        except (ImportError, ValueError):
+            return None

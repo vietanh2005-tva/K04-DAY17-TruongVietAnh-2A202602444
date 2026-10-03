@@ -16,7 +16,7 @@ class SessionState:
 
 
 class BaselineAgent:
-    """Student TODO: implement Agent A.
+    """Agent A with within-thread memory only.
 
     Requirements:
     - Within-session memory only
@@ -29,33 +29,39 @@ class BaselineAgent:
         self.force_offline = force_offline
         self.sessions: dict[str, SessionState] = {}
 
-        # TODO: optionally initialize a real LangChain/LangGraph agent when dependencies exist.
         self.langchain_agent = None
+        if not force_offline and self.config.model.api_key:
+            self.langchain_agent = self._maybe_build_langchain_agent()
 
     def reply(self, user_id: str, thread_id: str, message: str) -> dict[str, Any]:
-        """Student TODO: return the agent response and token accounting.
+        """Return the agent response and token accounting.
 
         Pseudocode:
         - If a live agent exists, call the live path.
         - Otherwise use a deterministic offline path.
         """
 
-        raise NotImplementedError
+        if self.langchain_agent is not None:
+            result = self.langchain_agent.invoke(
+                {"messages": [{"role": "user", "content": message}]},
+                config={"configurable": {"thread_id": thread_id}},
+            )
+            answer = result["messages"][-1].content
+            return {"answer": answer, "agent_tokens": estimate_tokens(answer), "prompt_tokens": estimate_tokens(message)}
+        return self._reply_offline(thread_id, message)
 
     def token_usage(self, thread_id: str) -> int:
-        # TODO: return cumulative agent token count for one thread.
-        raise NotImplementedError
+        return self.sessions.get(thread_id, SessionState()).token_usage
 
     def prompt_token_usage(self, thread_id: str) -> int:
-        # TODO: estimate how much prompt context this baseline kept processing.
-        raise NotImplementedError
+        return self.sessions.get(thread_id, SessionState()).prompt_tokens_processed
 
     def compaction_count(self, thread_id: str) -> int:
         # Baseline has no compact memory.
         return 0
 
     def _reply_offline(self, thread_id: str, message: str) -> dict[str, Any]:
-        """Student TODO: implement a simple offline behavior.
+        """Implement deterministic within-thread offline behavior.
 
         Suggested behavior:
         - Store the new user message in the session
@@ -64,12 +70,31 @@ class BaselineAgent:
         - Never remember facts across different thread ids
         """
 
-        raise NotImplementedError
+        session = self.sessions.setdefault(thread_id, SessionState())
+        session.messages.append({"role": "user", "content": message})
+        prompt_tokens = sum(estimate_tokens(item["content"]) for item in session.messages)
+        session.prompt_tokens_processed += prompt_tokens
+        answer = "Mình đã ghi nhận thông tin này trong cuộc trò chuyện hiện tại."
+        lower = message.lower()
+        if "tên gì" in lower or "tên mình" in lower:
+            name = next((item["content"] for item in reversed(session.messages[:-1]) if "tên" in item["content"].lower()), None)
+            answer = name or "Mình chưa có thông tin đó trong cuộc trò chuyện này."
+        elif any(term in lower for term in ("ở đâu", "nghề gì", "style", "đồ uống", "món ăn", "nuôi con", "tóm tắt")):
+            answer = "Mình chưa có đủ thông tin đó trong cuộc trò chuyện này."
+        agent_tokens = estimate_tokens(answer)
+        session.token_usage += agent_tokens
+        session.messages.append({"role": "assistant", "content": answer})
+        return {"answer": answer, "agent_tokens": agent_tokens, "prompt_tokens": prompt_tokens}
 
     def _maybe_build_langchain_agent(self):
-        """Student TODO: optionally wire `create_agent` + `InMemorySaver` here.
+        """Build an optional live LangChain agent when credentials exist.
 
         Use `build_chat_model(self.config.model)` so the baseline can run with any supported provider.
         """
 
-        raise NotImplementedError
+        try:
+            from langchain.agents import create_agent
+            from langgraph.checkpoint.memory import InMemorySaver
+            return create_agent(build_chat_model(self.config.model), checkpointer=InMemorySaver())
+        except (ImportError, ValueError):
+            return None
